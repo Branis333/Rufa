@@ -1,124 +1,109 @@
 # Rufa Backend
 
-A small, team-ready Node.js API starter built with Express. This setup provides
-the project structure and basic tooling only; it does not include business
-features, authentication, or a database yet.
+A minimal Python API built with FastAPI. It currently provides health checking,
+JSON error responses, CORS configuration, security headers, and interactive API
+documentation. Authentication, business features, and a database are not yet
+included.
 
 ## Requirements
 
-- Node.js 22 or newer
-- npm (included with Node.js)
-
-Check your versions:
-
-```bash
-node --version
-npm --version
-```
+- Python 3.11 or newer
 
 ## Quick start
 
-From the `backend` folder:
+Run these commands from the `backend` folder.
 
-1. Install the exact dependency versions recorded in `package-lock.json`:
+### Windows PowerShell
 
-   ```bash
-   npm ci
-   ```
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+Copy-Item .env.example .env
+uvicorn main:app --reload --host 0.0.0.0 --port 3000 --env-file .env
+```
 
-2. Create your local environment file:
+### macOS or Linux
 
-   macOS/Linux:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+cp .env.example .env
+uvicorn main:app --reload --host 0.0.0.0 --port 3000 --env-file .env
+```
 
-   ```bash
-   cp .env.example .env
-   ```
+The API is available at:
 
-   Windows PowerShell:
+- Health check: `http://localhost:3000/api/health`
+- Swagger UI: `http://localhost:3000/docs`
+- OpenAPI schema: `http://localhost:3000/openapi.json`
 
-   ```powershell
-   Copy-Item .env.example .env
-   ```
+The health endpoint returns:
 
-3. Start the development server:
-
-   ```bash
-   npm run dev
-   ```
-
-4. Open `http://localhost:3000/api/health`. A successful response looks like:
-
-   ```json
-   {
-     "status": "ok",
-     "service": "rufa-backend",
-     "timestamp": "2026-08-10T08:00:00.000Z"
-   }
-   ```
+```json
+{
+  "status": "ok",
+  "service": "rufa-backend",
+  "timestamp": "2026-08-11T06:43:00.000Z"
+}
+```
 
 ## Commands
 
-- `npm run dev` — start with automatic reload after file changes
-- `npm start` — start without automatic reload
-- `npm test` — run the tests
-- `npm run lint` — check code quality
-- `npm run format` — format project files
-- `npm run format:check` — check formatting without changing files
-
-Before opening a pull request, run:
-
 ```bash
-npm run lint
-npm test
-npm run format:check
+# Start development server
+uvicorn main:app --reload --host 0.0.0.0 --port 3000 --env-file .env
+
+# Run tests
+pytest
+
+# Check code
+ruff check .
+
+# Check formatting
+ruff format --check .
+
+# Apply formatting
+ruff format .
 ```
 
-## Environment variables
+## Environment
 
-Copy `.env.example` to `.env` and adjust these values:
+Copy `.env.example` to `.env` and configure:
 
-- `NODE_ENV` — `development`, `test`, or `production`
-- `PORT` — HTTP server port; defaults to `3000`
-- `CORS_ORIGIN` — browser origin allowed to call the API; defaults to `*`
+- `APP_ENV`: `development`, `test`, or `production`
+- `CORS_ORIGINS`: comma-separated allowed browser origins
 
-The `.env` file is ignored by Git. Never commit passwords, tokens, or other
-secrets. In production, replace `CORS_ORIGIN=*` with the frontend's exact
-origin, such as `https://app.example.com`.
+Use exact frontend origins in production:
 
-## Project structure
+```env
+APP_ENV=production
+CORS_ORIGINS=https://app.example.com,https://admin.example.com
+```
+
+The `.env` file is ignored by Git. Do not commit credentials or secrets.
+
+## Structure
 
 ```text
 backend/
-├── src/
-│   ├── config/          # Environment and application configuration
-│   ├── middleware/      # Shared Express middleware
-│   ├── routes/          # API route definitions
-│   ├── app.js           # Express app setup
-│   └── server.js        # HTTP server entry point
-├── tests/               # Automated tests
-├── .env.example         # Safe environment variable template
-├── eslint.config.js     # Linting rules
-└── package.json         # Dependencies and commands
+├── main.py                 # FastAPI application and routes
+├── tests/
+│   └── test_main.py        # API tests
+├── .env.example            # Safe environment template
+├── requirements.txt        # Runtime dependencies
+└── requirements-dev.txt    # Test and code-quality dependencies
 ```
-
-## Adding a feature
-
-Keep each feature focused and easy to review:
-
-1. Add its endpoint under `src/routes/`.
-2. Put reusable request logic in a new service or controller module instead of
-   making route files large.
-3. Register the router in `src/app.js` under `/api`.
-4. Add tests under `tests/`.
-5. Document new environment variables in both `.env.example` and this README.
-
-Use ES modules (`import`/`export`), keep secrets out of source code, and return
-JSON errors in the existing `{ "error": { "message": "..." } }` shape.
 
 ## Current API
 
-- `GET /api/health` — confirms that the API process is available
-- Any unknown route returns a JSON `404` response
+- `GET /api/health`: confirms that the API process is available
+- Unknown routes return `{"error":{"message":"Route not found: ..."}}`
 
-The server also includes JSON body parsing, Helmet security headers, CORS, input
-size limiting, centralized error responses, and graceful shutdown handling.
+For production, install `requirements.txt`, set environment variables through
+the hosting platform, and run:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 3000
+```
