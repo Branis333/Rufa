@@ -1,17 +1,17 @@
 # Rufa Backend
 
-A minimal Python API built with FastAPI. It currently provides health checking,
-JSON error responses, CORS configuration, security headers, and interactive API
-documentation. Authentication, business features, and a database are not yet
-included.
+A small FastAPI backend using Supabase's HTTPS Data API, secure password
+hashing, JWT authentication, CORS, JSON errors, and interactive API
+documentation.
 
 ## Requirements
 
 - Python 3.11 or newer
+- A Supabase project
 
-## Quick start
+## Setup
 
-Run these commands from the `backend` folder.
+Run from the `backend` folder.
 
 ### Windows PowerShell
 
@@ -20,7 +20,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
-uvicorn main:app --reload --host 0.0.0.0 --port 3000 --env-file .env
+uvicorn main:app --reload --host 0.0.0.0 --port 3000
 ```
 
 ### macOS or Linux
@@ -30,80 +30,136 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 cp .env.example .env
-uvicorn main:app --reload --host 0.0.0.0 --port 3000 --env-file .env
+uvicorn main:app --reload --host 0.0.0.0 --port 3000
 ```
 
-The API is available at:
+Before starting the API:
 
-- Health check: `http://localhost:3000/api/health`
+1. Open Supabase **SQL Editor**.
+2. Run `supabase/migrations/001_create_users.sql`.
+3. Add the project URL and a server-side Secret key to `.env`.
+
+FastAPI loads `.env` automatically. Database requests use HTTPS on port `443`;
+the PostgreSQL connection ports are not required.
+
 - Swagger UI: `http://localhost:3000/docs`
 - OpenAPI schema: `http://localhost:3000/openapi.json`
-
-The health endpoint returns:
-
-```json
-{
-  "status": "ok",
-  "service": "rufa-backend",
-  "timestamp": "2026-08-11T06:43:00.000Z"
-}
-```
-
-## Commands
-
-```bash
-# Start development server
-uvicorn main:app --reload --host 0.0.0.0 --port 3000 --env-file .env
-
-# Run tests
-pytest
-
-# Check code
-ruff check .
-
-# Check formatting
-ruff format --check .
-
-# Apply formatting
-ruff format .
-```
+- Health check: `http://localhost:3000/api/health`
 
 ## Environment
 
-Copy `.env.example` to `.env` and configure:
+Configure these values in `.env`:
 
+- `SUPABASE_URL`: project URL, such as `https://project-ref.supabase.co`
+- `SUPABASE_SECRET_KEY`: server-only `sb_secret_...` key
+- `JWT_SECRET_KEY`: random secret with at least 32 characters
+- `JWT_ALGORITHM`: defaults to `HS256`
+- `ACCESS_TOKEN_EXPIRE_MINUTES`: defaults to `60`
 - `APP_ENV`: `development`, `test`, or `production`
-- `CORS_ORIGINS`: comma-separated allowed browser origins
+- `CORS_ORIGINS`: comma-separated browser origins
 
-Use exact frontend origins in production:
+The Supabase Secret key bypasses Row Level Security. Never commit `.env`, send
+the key to a browser, or include it in frontend code.
 
-```env
-APP_ENV=production
-CORS_ORIGINS=https://app.example.com,https://admin.example.com
+## Authentication API
+
+### Sign up
+
+`POST /api/auth/signup`
+
+```json
+{
+  "fname": "Ada",
+  "lname": "Lovelace",
+  "email": "ada@example.com",
+  "password": "StrongPassword123!",
+  "phone_number": "+44 20 1234 5678",
+  "blood_group": "O+",
+  "location": "London",
+  "date_of_birth": "1990-12-10"
+}
 ```
 
-The `.env` file is ignored by Git. Do not commit credentials or secrets.
+The public signup endpoint always assigns the `user` role. Clients cannot grant
+roles to themselves.
 
-## Structure
+### Log in
+
+`POST /api/auth/login`
+
+```json
+{
+  "email": "ada@example.com",
+  "password": "StrongPassword123!"
+}
+```
+
+The response contains a signed bearer token:
+
+```json
+{
+  "access_token": "<token>",
+  "token_type": "bearer"
+}
+```
+
+### Current user
+
+`GET /api/auth/me`
+
+Send the token in the request header:
+
+```text
+Authorization: Bearer <token>
+```
+
+## User data
+
+The `users` table contains:
+
+- `user_id` UUID primary key
+- first and last name
+- unique normalized email
+- Argon2 password hash
+- optional phone number, blood group, location, and date of birth
+- roles, defaulting to `["user"]`
+- active and verified status
+- created and updated timestamps
+
+Passwords and password hashes are never returned by the API.
+
+## Project structure
 
 ```text
 backend/
-├── main.py                 # FastAPI application and routes
+├── api/
+│   ├── auth.py             # Signup, login, and current-user routes
+│   ├── dependencies.py     # Authentication dependencies
+│   └── health.py           # Health route
+├── core/
+│   ├── config.py           # Environment configuration
+│   └── security.py         # Password hashing and JWT helpers
+├── models/
+│   └── user.py             # SQLAlchemy User table
+├── schemas/
+│   ├── auth.py             # Login and token schemas
+│   ├── system.py           # Health response schema
+│   └── user.py             # User request and response schemas
+├── supabase/
+│   └── migrations/
+│       └── 001_create_users.sql
 ├── tests/
-│   └── test_main.py        # API tests
-├── .env.example            # Safe environment template
-├── requirements.txt        # Runtime dependencies
-└── requirements-dev.txt    # Test and code-quality dependencies
+├── database.py             # Supabase client and user repository
+└── main.py                 # FastAPI application
 ```
 
-## Current API
-
-- `GET /api/health`: confirms that the API process is available
-- Unknown routes return `{"error":{"message":"Route not found: ..."}}`
-
-For production, install `requirements.txt`, set environment variables through
-the hosting platform, and run:
+## Development commands
 
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 3000
+pytest
+ruff check .
+ruff format --check .
 ```
+
+Apply future SQL migration files through the Supabase dashboard or CLI before
+deploying application changes that depend on them.

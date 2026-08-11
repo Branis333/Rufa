@@ -1,30 +1,18 @@
 import logging
-import os
-from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 from starlette.exceptions import HTTPException
 
+from api.auth import router as auth_router
+from api.health import router as health_router
+from core.config import get_settings
+from database import UserRepositoryError
+
 logger = logging.getLogger("rufa")
-
-APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
-if APP_ENV not in {"development", "test", "production"}:
-    raise RuntimeError("APP_ENV must be development, test, or production.")
-
-cors_value = os.getenv("CORS_ORIGINS", "*")
-CORS_ORIGINS = [origin.strip() for origin in cors_value.split(",") if origin.strip()]
-if not CORS_ORIGINS:
-    raise RuntimeError("CORS_ORIGINS must contain at least one origin.")
-
-
-class HealthResponse(BaseModel):
-    status: str
-    service: str
-    timestamp: str
-
+settings = get_settings()
 
 app = FastAPI(
     title="Rufa Backend",
@@ -34,7 +22,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=settings.allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -50,13 +38,17 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
-@app.get("/api/health", response_model=HealthResponse, tags=["System"])
-async def health() -> HealthResponse:
-    timestamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-    return HealthResponse(
-        status="ok",
-        service="rufa-backend",
-        timestamp=timestamp.replace("+00:00", "Z"),
+app.include_router(health_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_validation_error(
+    _request: Request, _error: RequestValidationError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={"error": {"message": "Invalid request data."}},
     )
 
 
@@ -73,14 +65,30 @@ async def handle_http_error(request: Request, error: HTTPException) -> JSONRespo
     return JSONResponse(
         status_code=error.status_code,
         content={"error": {"message": message}},
+        headers=error.headers,
+    )
+
+
+@app.exception_handler(UserRepositoryError)
+async def handle_repository_error(
+    _request: Request, error: UserRepositoryError
+) -> JSONResponse:
+    logger.exception("Supabase user operation failed", exc_info=error)
+    return JSONResponse(
+        status_code=503,
+        content={"error": {"message": "Database service is unavailable."}},
     )
 
 
 @app.exception_handler(Exception)
 async def handle_unexpected_error(_request: Request, error: Exception) -> JSONResponse:
     logger.exception("Unhandled request error", exc_info=error)
-    message = "Internal server error" if APP_ENV == "production" else str(error)
+    message = (
+        "Internal server error"
+        if settings.app_env == "production"
+        else str(error) or "Internal server error"
+    )
     return JSONResponse(
         status_code=500,
-        content={"error": {"message": message or "Internal server error"}},
+        content={"error": {"message": message}},
     )

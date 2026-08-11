@@ -2,12 +2,8 @@ from datetime import datetime
 
 from fastapi.testclient import TestClient
 
-from main import app
 
-client = TestClient(app)
-
-
-def test_health_reports_api_is_available() -> None:
+def test_health_reports_api_is_available(client: TestClient) -> None:
     response = client.get("/api/health")
 
     assert response.status_code == 200
@@ -16,7 +12,7 @@ def test_health_reports_api_is_available() -> None:
     datetime.fromisoformat(response.json()["timestamp"].replace("Z", "+00:00"))
 
 
-def test_unknown_routes_return_json_404() -> None:
+def test_unknown_routes_return_json_404(client: TestClient) -> None:
     response = client.get("/api/unknown")
 
     assert response.status_code == 404
@@ -25,7 +21,7 @@ def test_unknown_routes_return_json_404() -> None:
     }
 
 
-def test_security_headers_are_present() -> None:
+def test_security_headers_are_present(client: TestClient) -> None:
     response = client.get("/api/health")
 
     assert response.headers["x-content-type-options"] == "nosniff"
