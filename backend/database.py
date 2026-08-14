@@ -77,6 +77,24 @@ class UserRepository:
             raise RuntimeError("Supabase did not return the created user.")
         return User.model_validate(response.data[0])
 
+    def update(self, user_id: UUID, data: dict[str, Any]) -> User:
+        try:
+            response = (
+                self.client.table("users")
+                .update(data)
+                .eq("user_id", str(user_id))
+                .execute()
+            )
+        except APIError as error:
+            if error.code == "23505":
+                raise UserAlreadyExistsError from error
+            raise UserRepositoryError from error
+        except HTTPError as error:
+            raise UserRepositoryError from error
+        if not response.data:
+            raise UserRepositoryError("Supabase did not update the user.")
+        return User.model_validate(response.data[0])
+
 
 def get_user_repository() -> UserRepository:
     return UserRepository(get_supabase_client())

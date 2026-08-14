@@ -1,165 +1,144 @@
-# Rufa Backend
+# Rufa FastAPI Backend
 
-A small FastAPI backend using Supabase's HTTPS Data API, secure password
-hashing, JWT authentication, CORS, JSON errors, and interactive API
-documentation.
-
-## Requirements
-
-- Python 3.11 or newer
-- A Supabase project
+Supabase-backed API for the Rufa Expo application. It provides custom
+Argon2/JWT authentication, blood request matching, donor commitments,
+activity, notifications, verification, messaging, contributions, and an
+authenticated WebSocket transport. The frontend is not connected yet.
 
 ## Setup
 
-Run from the `backend` folder.
-
-### Windows PowerShell
+Requirements: Python 3.11+ and a Supabase project.
 
 ```powershell
+cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
-uvicorn main:app --reload --host 0.0.0.0 --port 3000
 ```
 
-### macOS or Linux
+Set the real values in `.env`, then run each SQL file in order in the
+Supabase SQL Editor:
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-dev.txt
-cp .env.example .env
+1. `supabase/migrations/001_create_users.sql`
+2. `supabase/migrations/002_create_domain_schema.sql`
+3. `supabase/migrations/003_indexes_rpc_rls_seed.sql`
+
+Start the API:
+
+```powershell
 uvicorn main:app --reload --host 0.0.0.0 --port 3000
 ```
-
-Before starting the API:
-
-1. Open Supabase **SQL Editor**.
-2. Run `supabase/migrations/001_create_users.sql`.
-3. Add the project URL and a server-side Secret key to `.env`.
-
-FastAPI loads `.env` automatically. Database requests use HTTPS on port `443`;
-the PostgreSQL connection ports are not required.
 
 - Swagger UI: `http://localhost:3000/docs`
-- OpenAPI schema: `http://localhost:3000/openapi.json`
-- Health check: `http://localhost:3000/api/health`
+- OpenAPI: `http://localhost:3000/openapi.json`
+- Health: `http://localhost:3000/api/health`
+
+The backend uses Supabase's HTTPS Data API on port 443. It does not require
+direct PostgreSQL connectivity.
 
 ## Environment
 
-Configure these values in `.env`:
-
-- `SUPABASE_URL`: project URL, such as `https://project-ref.supabase.co`
+- `SUPABASE_URL`: `https://<project-ref>.supabase.co`
 - `SUPABASE_SECRET_KEY`: server-only `sb_secret_...` key
-- `JWT_SECRET_KEY`: random secret with at least 32 characters
+- `JWT_SECRET_KEY`: random value with at least 32 characters
 - `JWT_ALGORITHM`: defaults to `HS256`
 - `ACCESS_TOKEN_EXPIRE_MINUTES`: defaults to `60`
 - `APP_ENV`: `development`, `test`, or `production`
 - `CORS_ORIGINS`: comma-separated browser origins
 
-The Supabase Secret key bypasses Row Level Security. Never commit `.env`, send
-the key to a browser, or include it in frontend code.
+The Supabase secret key bypasses RLS. Never commit `.env`, expose this key to
+the frontend, or ship it in a mobile build.
 
-## Authentication API
+## API contract
 
-### Sign up
+JSON request and response fields use `camelCase`. Send authenticated requests
+with `Authorization: Bearer <token>`.
 
-`POST /api/auth/signup`
+Route groups:
 
-```json
-{
-  "fname": "Ada",
-  "lname": "Lovelace",
-  "email": "ada@example.com",
-  "password": "StrongPassword123!",
-  "phone_number": "+44 20 1234 5678",
-  "blood_group": "O+",
-  "location": "London",
-  "date_of_birth": "1990-12-10"
-}
-```
+- `/api/auth`: signup, login, current user, logout, password recovery, Google
+- `/api/users`: profile, preferences, location, stats, push token
+- `/api/hospitals`: nearby/search list and detail
+- `/api/requests`: create, nearby, mine, detail, cancel, completion,
+  eligibility, commitment progress and movement
+- `/api/donors`: compatible donor search and direct requests
+- `/api/donations`, `/api/activity`: history and summaries
+- `/api/notifications`: list, read one, read all
+- `/api/verification`: request, status, administrator review
+- `/api/conversations`: participant conversations and messages
+- `/api/contributions`: provider-neutral contribution records
 
-The public signup endpoint always assigns the `user` role. Clients cannot grant
-roles to themselves.
-
-### Log in
-
-`POST /api/auth/login`
+Error responses use one envelope:
 
 ```json
 {
-  "email": "ada@example.com",
-  "password": "StrongPassword123!"
+  "error": {
+    "message": "Human-readable message."
+  }
 }
 ```
 
-The response contains a signed bearer token:
+Password reset delivery, Google identity verification, and payment checkout
+are stable provider-neutral contracts. They explicitly report that no provider
+is configured; credentials and adapters must be added before those flows can
+complete externally.
 
-```json
-{
-  "access_token": "<token>",
-  "token_type": "bearer"
-}
-```
+## Realtime
 
-### Current user
-
-`GET /api/auth/me`
-
-Send the token in the request header:
+Connect with:
 
 ```text
-Authorization: Bearer <token>
+ws://localhost:3000/api/ws/v1?token=<jwt>
 ```
 
-## User data
+The connection automatically subscribes to `user:<userId>`. Authorized
+clients can subscribe to participant channels:
 
-The `users` table contains:
+- `request:<requestId>`
+- `commitment:<commitmentId>`
+- `conversation:<conversationId>`
 
-- `user_id` UUID primary key
-- first and last name
-- unique normalized email
-- Argon2 password hash
-- optional phone number, blood group, location, and date of birth
-- roles, defaulting to `["user"]`
-- active and verified status
-- created and updated timestamps
+Client frames:
 
-Passwords and password hashes are never returned by the API.
-
-## Project structure
-
-```text
-backend/
-├── api/
-│   ├── auth.py             # Signup, login, and current-user routes
-│   ├── dependencies.py     # Authentication dependencies
-│   └── health.py           # Health route
-├── core/
-│   ├── config.py           # Environment configuration
-│   └── security.py         # Password hashing and JWT helpers
-├── models/
-│   └── user.py             # SQLAlchemy User table
-├── schemas/
-│   ├── auth.py             # Login and token schemas
-│   ├── system.py           # Health response schema
-│   └── user.py             # User request and response schemas
-├── supabase/
-│   └── migrations/
-│       └── 001_create_users.sql
-├── tests/
-├── database.py             # Supabase client and user repository
-└── main.py                 # FastAPI application
+```json
+{"type": "subscribe", "channel": "request:<requestId>"}
+{"type": "unsubscribe", "channel": "request:<requestId>"}
+{"type": "ping"}
+{"type": "typing", "channel": "conversation:<conversationId>"}
+{"type": "location.update", "commitmentId": "<id>", "coordinates": {"lat": 0.35, "lng": 32.58}, "etaSeconds": 600}
 ```
 
-## Development commands
+Server events include `incoming_request`, `request.created`,
+`commitment.updated`, `movement.updated`, `message.created`,
+`verification.updated`, and `contribution.updated`.
 
-```bash
-pytest
-ruff check .
-ruff format --check .
+The hub is intentionally in-process. A multi-worker or multi-instance
+deployment must replace its fan-out with Redis/pub-sub or another shared
+message bus.
+
+## Security and behavior
+
+- Passwords are stored only as Argon2 hashes.
+- Public request projections round coordinates; precise coordinates are
+  returned only to request participants.
+- Services enforce ownership, blood compatibility, state transitions, and
+  one one-bag commitment per donor/request.
+- The API uses the service role, while migrations revoke table access from
+  `anon` and `authenticated`.
+- Verification document fields must contain opaque provider/storage
+  references, not raw document bytes.
+
+## Development
+
+Tests use in-memory repositories and never call live Supabase.
+
+```powershell
+python -m pytest -q
+python -m ruff check .
+python -m ruff format --check .
+python -m pip check
 ```
 
-Apply future SQL migration files through the Supabase dashboard or CLI before
-deploying application changes that depend on them.
+Apply all new migrations before deploying application code that depends on
+them.

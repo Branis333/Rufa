@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from api.dependencies import get_current_user
+from core.exceptions import ProviderNotConfiguredError
 from core.security import create_access_token, hash_password, verify_password
 from database import (
     UserAlreadyExistsError,
@@ -10,7 +11,14 @@ from database import (
     get_user_repository,
 )
 from models.user import User
-from schemas.auth import LoginRequest, TokenResponse
+from schemas.auth import (
+    ForgotPasswordRequest,
+    GoogleAuthRequest,
+    LoginRequest,
+    ResetPasswordRequest,
+    TokenResponse,
+)
+from schemas.common import ProviderResponse
 from schemas.user import UserCreate, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -35,15 +43,17 @@ def signup(
     try:
         return users.create(
             {
-                "fname": data.fname,
-                "lname": data.lname,
+                "fname": data.resolved_fname,
+                "lname": data.resolved_lname,
+                "display_name": data.username
+                or f"{data.resolved_fname} {data.resolved_lname}".strip(" -"),
                 "email": email,
                 "password_hash": hash_password(data.password),
                 "phone_number": (
                     data.phone_number.strip() if data.phone_number else None
                 ),
                 "blood_group": data.blood_group,
-                "location": data.location,
+                "location": data.city or data.location,
                 "date_of_birth": (
                     data.date_of_birth.isoformat() if data.date_of_birth else None
                 ),
@@ -85,3 +95,33 @@ def current_user(
     user: Annotated[User, Depends(get_current_user)],
 ) -> User:
     return user
+
+
+@router.post(
+    "/forgot-password",
+    response_model=ProviderResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def forgot_password(_data: ForgotPasswordRequest) -> ProviderResponse:
+    return ProviderResponse(
+        configured=False,
+        message=(
+            "If the account exists, a reset will be sent after an email "
+            "provider is configured."
+        ),
+    )
+
+
+@router.post("/reset-password", response_model=TokenResponse)
+def reset_password(_data: ResetPasswordRequest) -> TokenResponse:
+    raise ProviderNotConfiguredError("Password reset delivery is not configured.")
+
+
+@router.post("/google", response_model=TokenResponse)
+def google_auth(_data: GoogleAuthRequest) -> TokenResponse:
+    raise ProviderNotConfiguredError("Google authentication is not configured.")
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(_user: Annotated[User, Depends(get_current_user)]) -> None:
+    return None

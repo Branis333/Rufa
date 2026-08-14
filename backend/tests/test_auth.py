@@ -19,7 +19,7 @@ def test_signup_creates_user_without_exposing_password(client: TestClient) -> No
     body = response.json()
     assert body["email"] == "ada@example.com"
     assert body["roles"] == ["user"]
-    assert body["is_active"] is True
+    assert body["isActive"] is True
     assert "userId" in body
     assert "password" not in body
     assert "password_hash" not in body
@@ -59,8 +59,8 @@ def test_login_returns_token_that_can_access_current_user(
     )
 
     assert login_response.status_code == 200
-    token = login_response.json()["access_token"]
-    assert login_response.json()["token_type"] == "bearer"
+    token = login_response.json()["accessToken"]
+    assert login_response.json()["tokenType"] == "bearer"
 
     me_response = client.get(
         "/api/auth/me",
